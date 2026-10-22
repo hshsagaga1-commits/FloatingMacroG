@@ -74,10 +74,16 @@ local function tapAt(guiObject)
         return false
     end
     local pos = guiObject.AbsolutePosition + guiObject.AbsoluteSize / 2
+    -- Esconde temporariamente a bolinha para o clique atingir o controle abaixo dela.
+    guiObject.Visible = false
+    task.wait()
     local ok = pcall(function()
         VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+        task.wait()
         VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
     end)
+    task.wait()
+    if guiObject and guiObject.Parent then guiObject.Visible = true end
     if not ok then
         warn("[TouchMacro] O executor bloqueou a simulacao de clique.")
         return false
