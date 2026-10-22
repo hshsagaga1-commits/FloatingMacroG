@@ -393,6 +393,30 @@ local function setGuiTransparency(root, value)
     for _, child in ipairs(root:GetDescendants()) do apply(child) end
 end
 
+-- Apply transparency to the original counterpart too, so the game's real button
+-- (e.g. the flashlight button) changes together with the selected duplicate.
+local function setOriginalAndCloneTransparency(selectedRoot, value)
+    setGuiTransparency(selectedRoot, value)
+
+    local originalRoot = nil
+    if selectedRoot and selectedRoot.Name and string.sub(selectedRoot.Name, -10) == "_Duplicate" then
+        local originalName = string.sub(selectedRoot.Name, 1, #selectedRoot.Name - 10)
+        local parent = selectedRoot.Parent
+        if parent then
+            for _, sibling in ipairs(parent:GetChildren()) do
+                if sibling ~= selectedRoot and sibling.Name == originalName and sibling.ClassName == selectedRoot.ClassName then
+                    originalRoot = sibling
+                    break
+                end
+            end
+        end
+    end
+
+    if originalRoot then
+        setGuiTransparency(originalRoot, value)
+    end
+end
+
 -- Connect cloned GUI buttons back to the original buttons' existing game actions.
 -- Roblox :Clone() copies the visual hierarchy and properties, but Roblox does not copy
 -- event connections. Executor signal helpers are therefore needed for functional button clones.
@@ -474,7 +498,7 @@ BtnTransparency.MouseButton1Click:Connect(function()
     if not SelectedElement or not SelectedElement.Parent then return end
     transparencyIndex = transparencyIndex % #transparencySteps + 1
     local value = transparencySteps[transparencyIndex]
-    setGuiTransparency(SelectedElement, value)
+    setOriginalAndCloneTransparency(SelectedElement, value)
     BtnTransparency.Text = "Trans: " .. tostring(math.floor(value * 100)) .. "%"
 end)
 
