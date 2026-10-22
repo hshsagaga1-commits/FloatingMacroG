@@ -393,6 +393,56 @@ local function setGuiTransparency(root, value)
     for _, child in ipairs(root:GetDescendants()) do apply(child) end
 end
 
+-- Connect cloned GUI buttons back to the original buttons' existing game actions.
+-- Roblox :Clone() copies the visual hierarchy and properties, but Roblox does not copy
+-- event connections. Executor signal helpers are therefore needed for functional button clones.
+local function bindCloneButtonActions(originalRoot, cloneRoot)
+    local function bindPair(original, cloned)
+        if original:IsA("GuiButton") and cloned:IsA("GuiButton") then
+            local clickConn = cloned.Activated:Connect(function()
+                local fired = false
+
+                -- Prefer the legacy click signal if the game actually has listeners on it.
+                pcall(function()
+                    if typeof(getconnections) == "function" and typeof(firesignal) == "function" then
+                        local listeners = getconnections(original.MouseButton1Click)
+                        if listeners and #listeners > 0 then
+                            firesignal(original.MouseButton1Click)
+                            fired = true
+                        end
+                    end
+                end)
+
+                -- Otherwise use Activated (the modern cross-input button event).
+                if not fired then
+                    pcall(function()
+                        if typeof(firesignal) == "function" then
+                            firesignal(original.Activated)
+                            fired = true
+                        end
+                    end)
+                end
+
+                if not fired then
+                    warn("[MoverBotoes Duplicado] O executor não oferece firesignal; a cópia visual não consegue acionar a função original.")
+                end
+            end)
+            table.insert(Connections, clickConn)
+        end
+
+        local originalChildren = original:GetChildren()
+        local cloneChildren = cloned:GetChildren()
+        for i, originalChild in ipairs(originalChildren) do
+            local cloneChild = cloneChildren[i]
+            if cloneChild and cloneChild.ClassName == originalChild.ClassName then
+                bindPair(originalChild, cloneChild)
+            end
+        end
+    end
+
+    bindPair(originalRoot, cloneRoot)
+end
+
 BtnDuplicate.MouseButton1Click:Connect(function()
     if not SelectedElement or not SelectedElement.Parent then return end
     local original = SelectedElement
@@ -402,13 +452,17 @@ BtnDuplicate.MouseButton1Click:Connect(function()
         return
     end
 
+    -- Clone the entire hierarchy, including nested labels, images, frames and buttons.
     clone.Name = original.Name .. "_Duplicate"
     clone.Parent = original.Parent
     clone.Position = UDim2.new(original.Position.X.Scale, original.Position.X.Offset + 18,
         original.Position.Y.Scale, original.Position.Y.Offset + 18)
     clone.Visible = true
 
-    -- The clone is the actual GuiObject, not a numbered marker or preview.
+    -- Button event connections are not cloned by Roblox, so forward clone taps to the
+    -- matching original button's existing action where the executor supports firesignal.
+    bindCloneButtonActions(original, clone)
+
     SelectedElement = clone
     SelectedCluster = {clone}
     local key = GetKey(clone)
