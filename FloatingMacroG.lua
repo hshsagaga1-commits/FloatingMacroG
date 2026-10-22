@@ -1,14 +1,11 @@
 -- FloatingMacroG.lua
--- Botao flutuante G com controle de transparencia.
--- Delta/iOS: nao usa VirtualInputManager como fallback, pois pode fechar o cliente.
+-- Botao flutuante mobile com trava, arraste e transparencia.
+-- Esta versao NAO simula teclas: keypress/keyrelease estavam causando crash no iOS.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
-if not player then
-    warn("[FloatingMacroG] LocalPlayer indisponivel.")
-    return
-end
+if not player then warn("[FloatingMacroG] LocalPlayer indisponivel.") return end
 
 local guiParent = player:WaitForChild("PlayerGui")
 local oldGui = guiParent:FindFirstChild("FloatingMacroG")
@@ -42,14 +39,13 @@ macro.Parent = screenGui
 local circle = Instance.new("UICorner")
 circle.CornerRadius = UDim.new(1, 0)
 circle.Parent = macro
-
 local stroke = Instance.new("UIStroke")
 stroke.Thickness = 1.5
 stroke.Transparency = 0.25
 stroke.Color = Color3.fromRGB(255, 255, 255)
 stroke.Parent = macro
 
-local function makeSmallButton(name, text, size, position, z)
+local function makeSmallButton(name, label, size, position, z)
     local b = Instance.new("TextButton")
     b.Name = name
     b.Size = size
@@ -58,7 +54,7 @@ local function makeSmallButton(name, text, size, position, z)
     b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     b.BackgroundTransparency = 0.25
     b.BorderSizePixel = 0
-    b.Text = text
+    b.Text = label
     b.TextColor3 = Color3.fromRGB(255, 255, 255)
     b.TextScaled = true
     b.Font = Enum.Font.GothamBold
@@ -74,24 +70,16 @@ end
 
 local lockButton = makeSmallButton("PositionLock", "🔒", UDim2.fromOffset(30,30), UDim2.new(0.72,42,0.58,-42), 20)
 local opacityButton = makeSmallButton("TransparencyButton", "◐", UDim2.fromOffset(30,30), UDim2.new(0.72,42,0.58,42), 20)
-
-local locked = true
-local dragging = false
-local dragStart
-local startPosition
-local activeInput
+local locked, dragging = true, false
+local dragStart, startPosition, activeInput
 local opacityPercent = 55
 
-local function updateLockButton()
-    lockButton.Text = locked and "🔒" or "🔓"
-end
-
+local function updateLockButton() lockButton.Text = locked and "🔒" or "🔓" end
 local function updateAuxPositions()
     local p = macro.Position
     lockButton.Position = UDim2.new(p.X.Scale, p.X.Offset + 42, p.Y.Scale, p.Y.Offset - 42)
     opacityButton.Position = UDim2.new(p.X.Scale, p.X.Offset + 42, p.Y.Scale, p.Y.Offset + 42)
 end
-
 local function applyTransparency()
     local t = math.clamp(opacityPercent / 100, 0, 1)
     macro.BackgroundTransparency = t
@@ -105,34 +93,14 @@ local function applyTransparency()
     opacityButton.Text = hidden and "" or (tostring(opacityPercent) .. "%")
 end
 
-local function tapKey(keyCode)
-    keypress(keyCode)
-    task.wait(0.06)
-    keyrelease(keyCode)
-    task.wait(0.12)
-end
-
-local function pressG()
-    -- Sequencia solicitada: abre o menu com G e seleciona a opcao 6.
-    if typeof(keypress) ~= "function" or typeof(keyrelease) ~= "function" then
-        warn("[FloatingMacroG] Este ambiente do Delta nao disponibiliza keypress/keyrelease.")
-        return
-    end
+-- Apenas confirma que o toque foi recebido. Nenhuma tecla simulada nesta versao.
+macro.Activated:Connect(function()
     local oldColor = macro.BackgroundColor3
     macro.BackgroundColor3 = Color3.fromRGB(40, 150, 90)
     task.delay(0.25, function()
         if macro and macro.Parent then macro.BackgroundColor3 = oldColor end
     end)
-    local ok, err = pcall(function()
-        tapKey(0x47) -- G
-        tapKey(0x36) -- 6
-    end)
-    if not ok then
-        warn("[FloatingMacroG] Falha na sequencia G+6: " .. tostring(err))
-    end
-end
-
-macro.Activated:Connect(pressG)
+end)
 lockButton.Activated:Connect(function()
     locked = not locked
     updateLockButton()
@@ -152,13 +120,9 @@ macro.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch then activeInput = input end
     end
 end)
-
 macro.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        activeInput = input
-    end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then activeInput = input end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if not dragging or locked or not dragStart or not startPosition then return end
     if input.UserInputType == Enum.UserInputType.MouseMovement or input == activeInput then
@@ -167,13 +131,9 @@ UserInputService.InputChanged:Connect(function(input)
         updateAuxPositions()
     end
 end)
-
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-        dragStart = nil
-        startPosition = nil
-        activeInput = nil
+        dragging, dragStart, startPosition, activeInput = false, nil, nil, nil
     end
 end)
 
