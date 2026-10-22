@@ -100,8 +100,14 @@ local function applyTransparency()
     macro.BackgroundTransparency = t
     macro.TextTransparency = t
     stroke.Transparency = math.min(1, t + 0.25)
-    -- Mantem os controles pequenos visiveis para que seja possivel alterar a opcao.
-    opacityButton.Text = (opacityIndex == #opacityLevels) and "◌" or "◐"
+    -- No nivel 100%, todos os elementos ficam invisiveis, mas os botoes continuam
+    -- com a area de toque ativa. Toque novamente onde ficava o botao ◐ para restaurar.
+    local hidden = opacityIndex == #opacityLevels
+    for _, b in ipairs({lockButton, opacityButton}) do
+        b.BackgroundTransparency = hidden and 1 or 0.25
+        b.TextTransparency = hidden and 1 or 0
+    end
+    opacityButton.Text = hidden and "" or "◐"
 end
 
 local function pressG()
