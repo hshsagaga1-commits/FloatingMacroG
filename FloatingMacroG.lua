@@ -4,7 +4,6 @@
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 if not player then
     warn("[FloatingMacroG] LocalPlayer indisponivel.")
@@ -109,37 +108,27 @@ local function applyTransparency()
     opacityButton.Text = hidden and "" or (tostring(opacityPercent) .. "%")
 end
 
+local function tapKey(keyCode)
+    keypress(keyCode)
+    task.wait(0.06)
+    keyrelease(keyCode)
+    task.wait(0.12)
+end
+
 local function pressG()
-    -- Usa a mesma rota de emote do script que o usuario confirmou que funciona.
-    -- Nao tenta simular uma tecla fisica (keypress/VirtualInputManager).
-    local emoteNumber = tonumber(_G.EmoteNumber) or 1
-    emoteNumber = math.clamp(math.floor(emoteNumber), 1, 6)
-
-    local gamePlayers
-    local equip
-    pcall(function()
-        local gameFolder = workspace:FindFirstChild("Game")
-        gamePlayers = gameFolder and gameFolder:FindFirstChild("Players")
-        local playerFolder = gamePlayers and gamePlayers:FindFirstChild(player.Name)
-        equip = playerFolder and playerFolder:FindFirstChild("Equip")
-    end)
-
-    if equip and equip:IsA("RemoteFunction") then
-        local ok, err = pcall(function()
-            equip:InvokeServer(2)
-        end)
-        if not ok then warn("[FloatingMacroG] Equip falhou: " .. tostring(err)) end
+    -- Sequencia solicitada: abre o menu com G e seleciona a opcao 4.
+    -- Sem VirtualInputManager como fallback, pois ele pode derrubar o cliente.
+    if typeof(keypress) ~= "function" or typeof(keyrelease) ~= "function" then
+        warn("[FloatingMacroG] Este ambiente do Delta nao disponibiliza keypress/keyrelease.")
+        return
     end
 
-    local events = ReplicatedStorage:FindFirstChild("Events")
-    local emoteRemote = events and events:FindFirstChild("Emote")
-    if emoteRemote and emoteRemote:IsA("RemoteEvent") then
-        local ok, err = pcall(function()
-            emoteRemote:FireServer(tostring(emoteNumber))
-        end)
-        if not ok then warn("[FloatingMacroG] Emote falhou: " .. tostring(err)) end
-    else
-        warn("[FloatingMacroG] Remote de emote nao encontrado neste servidor.")
+    local ok, err = pcall(function()
+        tapKey(0x47) -- G
+        tapKey(0x34) -- 4
+    end)
+    if not ok then
+        warn("[FloatingMacroG] Falha na sequencia G+4: " .. tostring(err))
     end
 end
 
