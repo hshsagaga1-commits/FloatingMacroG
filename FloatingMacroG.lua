@@ -1,37 +1,19 @@
 -- FloatingMacroG.lua
--- Botao flutuante para tentar acionar a tecla G.
--- Observacao: keypress/keyrelease dependem do executor; Roblox/iOS pode bloquear a simulacao.
+-- Botao flutuante G com controle de transparencia.
+-- Delta/iOS: nao usa VirtualInputManager como fallback, pois pode fechar o cliente.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
-
 local player = Players.LocalPlayer
 if not player then
     warn("[FloatingMacroG] LocalPlayer indisponivel.")
     return
 end
 
-local guiParent
-pcall(function()
-    if typeof(gethui) == "function" then
-        guiParent = gethui()
-    end
-end)
-if not guiParent then
-    pcall(function()
-        guiParent = CoreGui
-    end)
-end
-if not guiParent then
-    guiParent = player:WaitForChild("PlayerGui")
-end
-
-local oldGui
-pcall(function()
-    oldGui = guiParent:FindFirstChild("FloatingMacroG")
-    if oldGui then oldGui:Destroy() end
-end)
+-- PlayerGui e a opcao mais conservadora para evitar problemas com CoreGui/gethui.
+local guiParent = player:WaitForChild("PlayerGui")
+local oldGui = guiParent:FindFirstChild("FloatingMacroG")
+if oldGui then oldGui:Destroy() end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FloatingMacroG"
@@ -50,9 +32,10 @@ macro.BackgroundTransparency = 0.55
 macro.BorderSizePixel = 0
 macro.Text = "G"
 macro.TextColor3 = Color3.fromRGB(255, 255, 255)
+macro.TextTransparency = 0
 macro.TextScaled = true
 macro.Font = Enum.Font.GothamBold
-macro.AutoButtonColor = true
+macro.AutoButtonColor = false
 macro.Active = true
 macro.ZIndex = 10
 macro.Parent = screenGui
@@ -67,25 +50,31 @@ stroke.Transparency = 0.25
 stroke.Color = Color3.fromRGB(255, 255, 255)
 stroke.Parent = macro
 
--- O cadeado fica separado do botao G para nao disparar o macro ao alternar o bloqueio.
-local lockButton = Instance.new("TextButton")
-lockButton.Name = "PositionLock"
-lockButton.Size = UDim2.fromOffset(30, 30)
-lockButton.Position = UDim2.new(0.72, 42, 0.58, -42)
-lockButton.AnchorPoint = Vector2.new(0.5, 0.5)
-lockButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-lockButton.BackgroundTransparency = 0.25
-lockButton.BorderSizePixel = 0
-lockButton.Text = "🔒"
-lockButton.TextScaled = true
-lockButton.Font = Enum.Font.GothamBold
-lockButton.Active = true
-lockButton.ZIndex = 20
-lockButton.Parent = screenGui
+local function makeSmallButton(name, text, size, position, z)
+    local b = Instance.new("TextButton")
+    b.Name = name
+    b.Size = size
+    b.Position = position
+    b.AnchorPoint = Vector2.new(0.5, 0.5)
+    b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    b.BackgroundTransparency = 0.25
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.TextScaled = true
+    b.Font = Enum.Font.GothamBold
+    b.AutoButtonColor = false
+    b.Active = true
+    b.ZIndex = z
+    b.Parent = screenGui
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(1, 0)
+    c.Parent = b
+    return b
+end
 
-local lockCorner = Instance.new("UICorner")
-lockCorner.CornerRadius = UDim.new(1, 0)
-lockCorner.Parent = lockButton
+local lockButton = makeSmallButton("PositionLock", "🔒", UDim2.fromOffset(30,30), UDim2.new(0.72,42,0.58,-42), 20)
+local opacityButton = makeSmallButton("TransparencyButton", "◐", UDim2.fromOffset(30,30), UDim2.new(0.72,42,0.58,42), 20)
 
 local locked = true
 local dragging = false
@@ -93,47 +82,53 @@ local dragStart
 local startPosition
 local activeInput
 
+local opacityLevels = {0.55, 0.75, 0.9, 1}
+local opacityIndex = 1
+
 local function updateLockButton()
     lockButton.Text = locked and "🔒" or "🔓"
 end
 
-local function updateLockPosition()
+local function updateAuxPositions()
     local p = macro.Position
     lockButton.Position = UDim2.new(p.X.Scale, p.X.Offset + 42, p.Y.Scale, p.Y.Offset - 42)
+    opacityButton.Position = UDim2.new(p.X.Scale, p.X.Offset + 42, p.Y.Scale, p.Y.Offset + 42)
+end
+
+local function applyTransparency()
+    local t = opacityLevels[opacityIndex]
+    macro.BackgroundTransparency = t
+    macro.TextTransparency = t
+    stroke.Transparency = math.min(1, t + 0.25)
+    -- Mantem os controles pequenos visiveis para que seja possivel alterar a opcao.
+    opacityButton.Text = (opacityIndex == #opacityLevels) and "◌" or "◐"
 end
 
 local function pressG()
-    local sent = false
-
-    if typeof(keypress) == "function" and typeof(keyrelease) == "function" then
-        local ok = pcall(function()
-            keypress(0x47)
-            task.wait(0.04)
-            keyrelease(0x47)
-        end)
-        sent = ok
+    -- Sem fallback para VirtualInputManager: em alguns ambientes mobile essa chamada
+    -- pode encerrar o cliente. Se Delta nao disponibilizar keypress, apenas avisa.
+    if typeof(keypress) ~= "function" or typeof(keyrelease) ~= "function" then
+        warn("[FloatingMacroG] Delta nao disponibilizou keypress/keyrelease neste ambiente.")
+        return
     end
-
-    if not sent then
-        local ok = pcall(function()
-            local vim = game:GetService("VirtualInputManager")
-            vim:SendKeyEvent(true, Enum.KeyCode.G, false, game)
-            task.wait(0.04)
-            vim:SendKeyEvent(false, Enum.KeyCode.G, false, game)
-        end)
-        sent = ok
-    end
-
-    if not sent then
-        warn("[FloatingMacroG] Este executor pode nao permitir simular a tecla G neste dispositivo.")
+    local ok, err = pcall(function()
+        keypress(0x47)
+        task.wait(0.04)
+        keyrelease(0x47)
+    end)
+    if not ok then
+        warn("[FloatingMacroG] Falha ao enviar G: " .. tostring(err))
     end
 end
 
 macro.Activated:Connect(pressG)
-
 lockButton.Activated:Connect(function()
     locked = not locked
     updateLockButton()
+end)
+opacityButton.Activated:Connect(function()
+    opacityIndex = (opacityIndex % #opacityLevels) + 1
+    applyTransparency()
 end)
 
 macro.InputBegan:Connect(function(input)
@@ -142,9 +137,7 @@ macro.InputBegan:Connect(function(input)
         dragging = true
         dragStart = input.Position
         startPosition = macro.Position
-        if input.UserInputType == Enum.UserInputType.Touch then
-            activeInput = input
-        end
+        if input.UserInputType == Enum.UserInputType.Touch then activeInput = input end
     end
 end)
 
@@ -162,7 +155,7 @@ UserInputService.InputChanged:Connect(function(input)
             startPosition.X.Scale, startPosition.X.Offset + delta.X,
             startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
         )
-        updateLockPosition()
+        updateAuxPositions()
     end
 end)
 
@@ -176,4 +169,5 @@ UserInputService.InputEnded:Connect(function(input)
 end)
 
 updateLockButton()
-updateLockPosition()
+updateAuxPositions()
+applyTransparency()
