@@ -82,8 +82,7 @@ local dragStart
 local startPosition
 local activeInput
 
-local opacityLevels = {0.55, 0.75, 0.9, 1}
-local opacityIndex = 1
+local opacityPercent = 55
 
 local function updateLockButton()
     lockButton.Text = locked and "🔒" or "🔓"
@@ -96,18 +95,17 @@ local function updateAuxPositions()
 end
 
 local function applyTransparency()
-    local t = opacityLevels[opacityIndex]
+    local t = math.clamp(opacityPercent / 100, 0, 1)
     macro.BackgroundTransparency = t
     macro.TextTransparency = t
-    stroke.Transparency = math.min(1, t + 0.25)
-    -- No nivel 100%, todos os elementos ficam invisiveis, mas os botoes continuam
-    -- com a area de toque ativa. Toque novamente onde ficava o botao ◐ para restaurar.
-    local hidden = opacityIndex == #opacityLevels
+    stroke.Transparency = math.clamp(t + 0.25, 0, 1)
+    -- Em 100%, controles invisiveis mas ainda tocaveis para restaurar.
+    local hidden = opacityPercent >= 100
     for _, b in ipairs({lockButton, opacityButton}) do
         b.BackgroundTransparency = hidden and 1 or 0.25
         b.TextTransparency = hidden and 1 or 0
     end
-    opacityButton.Text = hidden and "" or "◐"
+    opacityButton.Text = hidden and "" or (tostring(opacityPercent) .. "%")
 end
 
 local function pressG()
@@ -133,7 +131,9 @@ lockButton.Activated:Connect(function()
     updateLockButton()
 end)
 opacityButton.Activated:Connect(function()
-    opacityIndex = (opacityIndex % #opacityLevels) + 1
+    -- Cada toque aumenta 10%; depois de 100%, volta a 0%.
+    opacityPercent = (opacityPercent + 10) % 110
+    if opacityPercent > 100 then opacityPercent = 0 end
     applyTransparency()
 end)
 
