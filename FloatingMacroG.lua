@@ -10,7 +10,6 @@ if not player then
     return
 end
 
--- PlayerGui e a opcao mais conservadora para evitar problemas com CoreGui/gethui.
 local guiParent = player:WaitForChild("PlayerGui")
 local oldGui = guiParent:FindFirstChild("FloatingMacroG")
 if oldGui then oldGui:Destroy() end
@@ -81,7 +80,6 @@ local dragging = false
 local dragStart
 local startPosition
 local activeInput
-
 local opacityPercent = 55
 
 local function updateLockButton()
@@ -99,7 +97,6 @@ local function applyTransparency()
     macro.BackgroundTransparency = t
     macro.TextTransparency = t
     stroke.Transparency = math.clamp(t + 0.25, 0, 1)
-    -- Em 100%, controles invisiveis mas ainda tocaveis para restaurar.
     local hidden = opacityPercent >= 100
     for _, b in ipairs({lockButton, opacityButton}) do
         b.BackgroundTransparency = hidden and 1 or 0.25
@@ -116,19 +113,22 @@ local function tapKey(keyCode)
 end
 
 local function pressG()
-    -- Sequencia solicitada: abre o menu com G e seleciona a opcao 4.
-    -- Sem VirtualInputManager como fallback, pois ele pode derrubar o cliente.
+    -- Sequencia solicitada: abre o menu com G e seleciona a opcao 6.
     if typeof(keypress) ~= "function" or typeof(keyrelease) ~= "function" then
         warn("[FloatingMacroG] Este ambiente do Delta nao disponibiliza keypress/keyrelease.")
         return
     end
-
+    local oldColor = macro.BackgroundColor3
+    macro.BackgroundColor3 = Color3.fromRGB(40, 150, 90)
+    task.delay(0.25, function()
+        if macro and macro.Parent then macro.BackgroundColor3 = oldColor end
+    end)
     local ok, err = pcall(function()
         tapKey(0x47) -- G
-        tapKey(0x34) -- 4
+        tapKey(0x36) -- 6
     end)
     if not ok then
-        warn("[FloatingMacroG] Falha na sequencia G+4: " .. tostring(err))
+        warn("[FloatingMacroG] Falha na sequencia G+6: " .. tostring(err))
     end
 end
 
@@ -138,7 +138,6 @@ lockButton.Activated:Connect(function()
     updateLockButton()
 end)
 opacityButton.Activated:Connect(function()
-    -- Cada toque aumenta 10%; depois de 100%, volta a 0%.
     opacityPercent = (opacityPercent + 10) % 110
     if opacityPercent > 100 then opacityPercent = 0 end
     applyTransparency()
@@ -164,10 +163,7 @@ UserInputService.InputChanged:Connect(function(input)
     if not dragging or locked or not dragStart or not startPosition then return end
     if input.UserInputType == Enum.UserInputType.MouseMovement or input == activeInput then
         local delta = input.Position - dragStart
-        macro.Position = UDim2.new(
-            startPosition.X.Scale, startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
-        )
+        macro.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
         updateAuxPositions()
     end
 end)
