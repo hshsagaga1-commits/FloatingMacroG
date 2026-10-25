@@ -380,17 +380,53 @@ BtnTransparency.Position = UDim2.new(0, 122, 0, 47)
 local transparencySteps = {0, 0.25, 0.5, 0.75, 1}
 local transparencyIndex = 1
 
+-- Remember original border/stroke settings so cycling back to 0% restores them.
+local originalVisualSettings = setmetatable({}, {__mode = "k"})
+
 local function setGuiTransparency(root, value)
+    value = math.clamp(tonumber(value) or 0, 0, 1)
+
     local function apply(obj)
         if obj:IsA("GuiObject") then
+            if not originalVisualSettings[obj] then
+                originalVisualSettings[obj] = {
+                    BorderSizePixel = obj.BorderSizePixel
+                }
+            end
+            local original = originalVisualSettings[obj]
+
+            -- Fade every standard GUI visual property.
             pcall(function() obj.BackgroundTransparency = value end)
             pcall(function() obj.TextTransparency = value end)
             pcall(function() obj.TextStrokeTransparency = value end)
             pcall(function() obj.ImageTransparency = value end)
+
+            -- Roblox borders are separate from BackgroundTransparency.
+            pcall(function()
+                obj.BorderSizePixel = value >= 1 and 0 or original.BorderSizePixel
+            end)
+
+            -- CanvasGroup can otherwise leave its own group opacity behind.
+            if obj:IsA("CanvasGroup") then
+                pcall(function() obj.GroupTransparency = value end)
+            end
+        elseif obj:IsA("UIStroke") then
+            if not originalVisualSettings[obj] then
+                originalVisualSettings[obj] = {Transparency = obj.Transparency}
+            end
+            local original = originalVisualSettings[obj]
+            -- 100% means absolutely invisible; lower levels preserve the stroke's
+            -- own original opacity while making it progressively more transparent.
+            pcall(function()
+                obj.Transparency = value >= 1 and 1 or math.max(original.Transparency, value)
+            end)
         end
     end
+
     apply(root)
-    for _, child in ipairs(root:GetDescendants()) do apply(child) end
+    for _, child in ipairs(root:GetDescendants()) do
+        apply(child)
+    end
 end
 
 -- Apply transparency to the original counterpart too, so the game's real button
