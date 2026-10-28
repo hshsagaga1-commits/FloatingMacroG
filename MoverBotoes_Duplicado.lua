@@ -120,11 +120,45 @@ local function CaptureOriginalIfNeeded(obj)
     end
 end
 
+-- Proportional sizing: UIScale scales the selected GUI and its visual descendants
+-- together, instead of squeezing the root Size and breaking text/layout.
+local SCALE_LEVELS = {1, 0.75, 0.50, 0.45, 0.30, 0.20, 0.10, 0.05, 0.01}
+local SCALE_OBJECT_NAME = "__MoverBotoesProportionalScale"
+
+local function ApplyObjectScale(obj, scale)
+    if not obj or not obj:IsA("GuiObject") then return end
+    scale = math.clamp(tonumber(scale) or 1, 0.01, 1)
+    local modifier = obj:FindFirstChild(SCALE_OBJECT_NAME)
+    if not modifier or not modifier:IsA("UIScale") then
+        modifier = Instance.new("UIScale")
+        modifier.Name = SCALE_OBJECT_NAME
+        modifier.Parent = obj
+    end
+    if math.abs(modifier.Scale - scale) > 0.0001 then
+        modifier.Scale = scale
+    end
+end
+
+local function GetNextScale(current, direction)
+    local nearestIndex, nearestDistance = 1, math.huge
+    for i, level in ipairs(SCALE_LEVELS) do
+        local distance = math.abs(level - (tonumber(current) or 1))
+        if distance < nearestDistance then
+            nearestIndex, nearestDistance = i, distance
+        end
+    end
+    return SCALE_LEVELS[math.clamp(nearestIndex + direction, 1, #SCALE_LEVELS)]
+end
+
 -- ZERO-LAG EVENT SYSTEM
 local function ScanSingleObject(obj)
     if obj:IsA("GuiObject") and not obj:IsDescendantOf(TargetParent) then
         local key = GetKey(obj)
-        if RuleMap[key] then KnownTrackedObjects[obj] = key end
+        if RuleMap[key] then
+            KnownTrackedObjects[obj] = key
+            local rule = RuleMap[key]
+            if rule.ScaleModified then ApplyObjectScale(obj, rule.Scale or 1) end
+        end
     end
 end
 
@@ -654,7 +688,12 @@ RunService:BindToRenderStep("OmniTracker_Enforce", 2000, function()
 
                 if not isBeingDragged then
                     if obj.Position ~= rule.Position then obj.Position = rule.Position end
-                    if rule.SizeModified and obj.Size ~= rule.Size then obj.Size = rule.Size end
+                    if rule.ScaleModified then
+                        ApplyObjectScale(obj, rule.Scale or 1)
+                    elseif rule.SizeModified and obj.Size ~= rule.Size then
+                        -- Compatibility with configurations saved by older versions.
+                        obj.Size = rule.Size
+                    end
                 end
             end
         else
@@ -704,7 +743,9 @@ local function LoadSpecificFile(filePath)
                 IsDeleted = savedData.IsDeleted,
                 Position = UDim2.new(unpack(savedData.Position)),
                 Size = UDim2.new(unpack(savedData.Size)),
-                SizeModified = savedData.SizeModified or false 
+                SizeModified = savedData.SizeModified or false,
+                ScaleModified = savedData.ScaleModified or false,
+                Scale = tonumber(savedData.Scale) or 1
             }
         end
         ForceScanUI() 
@@ -896,31 +937,42 @@ BtnLock.MouseButton1Click:Connect(function()
     if isMenuLocked then BtnLock.Text = "🔒" else BtnLock.Text = "🔓" end
 end)
 
-local function ModifySize(increment)
-    if SelectedElement and #SelectedCluster > 0 then
-        for _, el in ipairs(SelectedCluster) do
-            local key = GetKey(el)
-            
-            local currentVisualSize = el.Size
-            if currentVisualSize == UDim2.new(0,0,0,0) then
-                currentVisualSize = UDim2.new(0, el.AbsoluteSize.X, 0, el.AbsoluteSize.Y)
-            end
-            
-            if not RuleMap[key] then 
-                RuleMap[key] = { Name = el.Name, IsDeleted = false, Position = GetSafeVisualPosition(el), Size = currentVisualSize, SizeModified = false } 
-            end
-            
-            RuleMap[key].SizeModified = true 
-            local s = RuleMap[key].Size
-            local newSize = UDim2.new(s.X.Scale, s.X.Offset + increment, s.Y.Scale, s.Y.Offset + increment)
-            RuleMap[key].Size = newSize
-            el.Size = newSize
+local function ModifySize(direction)
+    if not SelectedElement or #SelectedCluster == 0 then return end
+
+    for _, el in ipairs(SelectedCluster) do
+        local key = GetKey(el)
+        local currentVisualSize = el.Size
+        if currentVisualSize == UDim2.new(0, 0, 0, 0) then
+            currentVisualSize = UDim2.new(0, el.AbsoluteSize.X, 0, el.AbsoluteSize.Y)
         end
+
+        if not RuleMap[key] then
+            RuleMap[key] = {
+                Name = el.Name,
+                IsDeleted = false,
+                Position = GetSafeVisualPosition(el),
+                Size = currentVisualSize,
+                SizeModified = false,
+                ScaleModified = false,
+                Scale = 1
+            }
+        end
+
+        local rule = RuleMap[key]
+        local currentScale = tonumber(rule.Scale) or 1
+        -- Old configs that used SizeModified switch cleanly to proportional scaling.
+        if not rule.ScaleModified then currentScale = 1 end
+        local newScale = GetNextScale(currentScale, direction)
+        rule.Scale = newScale
+        rule.ScaleModified = true
+        ApplyObjectScale(el, newScale)
     end
 end
 
-BtnPlus.MouseButton1Click:Connect(function() ModifySize(15) end)
-BtnMinus.MouseButton1Click:Connect(function() ModifySize(-15) end)
+-- Manual step controls: each tap changes the selected button's proportional scale.
+BtnPlus.MouseButton1Click:Connect(function() ModifySize(-1) end)
+BtnMinus.MouseButton1Click:Connect(function() ModifySize(1) end)
 
 BtnDelete.MouseButton1Click:Connect(function()
     if SelectedElement and #SelectedCluster > 0 then
@@ -969,7 +1021,9 @@ SaveConfigBtn.MouseButton1Click:Connect(function()
                 IsDeleted = rule.IsDeleted, 
                 Position = {rule.Position.X.Scale, rule.Position.X.Offset, rule.Position.Y.Scale, rule.Position.Y.Offset},
                 Size = {rule.Size.X.Scale, rule.Size.X.Offset, rule.Size.Y.Scale, rule.Size.Y.Offset},
-                SizeModified = rule.SizeModified or false
+                SizeModified = rule.SizeModified or false,
+                ScaleModified = rule.ScaleModified or false,
+                Scale = rule.Scale or 1
             }
         end
         writefile(savePath, HttpService:JSONEncode(dataToSave))
