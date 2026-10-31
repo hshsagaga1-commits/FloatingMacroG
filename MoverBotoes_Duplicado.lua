@@ -1,4 +1,9 @@
 -- Delta Executor Compatible | Permanent Memory Mobile UI Editor V50 (Perfected Core & Zero Lag)
+-- 30/10/2026 proportional scale fix: + now grows up to 250%.
+-- Uses the existing UIScale for button/text/icon scaling; layout/position
+-- editing, duplication, erase, restore, saved configs and load remain intact.
+-- Original unmodified backup: MoverBotoes_Duplicado_pre250Scale.lua
+
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -122,12 +127,12 @@ end
 
 -- Proportional sizing: UIScale scales the selected GUI and its visual descendants
 -- together, instead of squeezing the root Size and breaking text/layout.
-local SCALE_LEVELS = {1, 0.75, 0.50, 0.45, 0.30, 0.20, 0.10, 0.05, 0.01}
+local SCALE_LEVELS = {2.50, 2.25, 2.00, 1.75, 1.50, 1.25, 1.10, 1, 0.75, 0.50, 0.45, 0.30, 0.20, 0.10, 0.05, 0.01}
 local SCALE_OBJECT_NAME = "__MoverBotoesProportionalScale"
 
 local function ApplyObjectScale(obj, scale)
     if not obj or not obj:IsA("GuiObject") then return end
-    scale = math.clamp(tonumber(scale) or 1, 0.01, 1)
+    scale = math.clamp(tonumber(scale) or 1, 0.01, 2.50)
     local modifier = obj:FindFirstChild(SCALE_OBJECT_NAME)
     if not modifier or not modifier:IsA("UIScale") then
         modifier = Instance.new("UIScale")
