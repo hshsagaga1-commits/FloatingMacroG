@@ -1,8 +1,12 @@
 -- Delta Executor Compatible | Permanent Memory Mobile UI Editor V50 (Perfected Core & Zero Lag)
--- 30/10/2026 proportional scale fix: + now grows up to 250%.
--- Uses the existing UIScale for button/text/icon scaling; layout/position
--- editing, duplication, erase, restore, saved configs and load remain intact.
--- Original unmodified backup: MoverBotoes_Duplicado_pre250Scale.lua
+-- 30/10/2026: proportional resizing with NO fixed upper cap.
+-- Existing sizes up to 250% stay unchanged; above 250%, each '+' grows
+-- by 25% of the CURRENT scale, and '-' walks back reversibly.
+-- UIScale preserves button proportions, icon/text and original root Size.
+-- Roblox rendering/numeric limits still exist. If engine rejects a size,
+-- stop safely at last valid scale and keep saved RuleMap intact.
+-- Backups: MoverBotoes_Duplicado_pre250Scale.lua and
+-- MoverBotoes_Duplicado_preUnlimitedScale.lua
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -129,25 +133,68 @@ end
 -- together, instead of squeezing the root Size and breaking text/layout.
 local SCALE_LEVELS = {2.50, 2.25, 2.00, 1.75, 1.50, 1.25, 1.10, 1, 0.75, 0.50, 0.45, 0.30, 0.20, 0.10, 0.05, 0.01}
 local SCALE_OBJECT_NAME = "__MoverBotoesProportionalScale"
+local SCALE_GROWTH_FACTOR = 1.25 -- no arbitrary maximum percentage
+
+local function IsFinitePositiveScale(value)
+    return type(value) == "number"
+        and value == value
+        and value > 0
+        and value < math.huge
+end
 
 local function ApplyObjectScale(obj, scale)
-    if not obj or not obj:IsA("GuiObject") then return end
-    scale = math.clamp(tonumber(scale) or 1, 0.01, 2.50)
+    if not obj or not obj:IsA("GuiObject") then return false end
+    scale = tonumber(scale) or 1
+    if not IsFinitePositiveScale(scale) then return false end
+    -- Only MINIMUM is fixed. No maximum is enforced by this script.
+    scale = math.max(scale, 0.01)
     local modifier = obj:FindFirstChild(SCALE_OBJECT_NAME)
     if not modifier or not modifier:IsA("UIScale") then
         modifier = Instance.new("UIScale")
         modifier.Name = SCALE_OBJECT_NAME
         modifier.Parent = obj
     end
-    if math.abs(modifier.Scale - scale) > 0.0001 then
+
+    local previous = modifier.Scale
+    local tolerance = math.max(0.0001, math.abs(scale) * 0.000001)
+    if math.abs(previous - scale) <= tolerance then return true end
+
+    local ok = pcall(function()
         modifier.Scale = scale
+    end)
+    local readOK, actual = pcall(function()
+        return modifier.Scale
+    end)
+    if not ok or not readOK or not IsFinitePositiveScale(actual)
+        or math.abs(actual - scale) > tolerance then
+        -- Restore the previous good value if Roblox rejected/clamped this
+        -- request. Do NOT change the RuleMap and poison saved profiles.
+        pcall(function() modifier.Scale = previous end)
+        return false
     end
+    return true
 end
 
 local function GetNextScale(current, direction)
+    current = tonumber(current) or 1
+    if not IsFinitePositiveScale(current) then current = 1 end
+
+    -- The existing table is preserved up to 250% so old saved profiles
+    -- and the familiar incremental steps remain unchanged.
+    if current > 2.50 then
+        if direction < 0 then
+            local grown = current * SCALE_GROWTH_FACTOR
+            return IsFinitePositiveScale(grown) and grown or current
+        end
+        return math.max(2.50, current / SCALE_GROWTH_FACTOR)
+    end
+    if current >= 2.50 and direction < 0 then
+        return current * SCALE_GROWTH_FACTOR
+    end
+
     local nearestIndex, nearestDistance = 1, math.huge
     for i, level in ipairs(SCALE_LEVELS) do
-        local distance = math.abs(level - (tonumber(current) or 1))
+        local distance = math.abs(level - current)
         if distance < nearestDistance then
             nearestIndex, nearestDistance = i, distance
         end
@@ -969,9 +1016,14 @@ local function ModifySize(direction)
         -- Old configs that used SizeModified switch cleanly to proportional scaling.
         if not rule.ScaleModified then currentScale = 1 end
         local newScale = GetNextScale(currentScale, direction)
-        rule.Scale = newScale
-        rule.ScaleModified = true
-        ApplyObjectScale(el, newScale)
+        -- Update persistent config only if UIScale actually accepted the
+        -- larger value. Otherwise maintain the previous valid size.
+        if newScale ~= currentScale and ApplyObjectScale(el, newScale) then
+            rule.Scale = newScale
+            rule.ScaleModified = true
+        elseif newScale ~= currentScale then
+            warn("[MoverBotoes] O Roblox nao aceitou esse tamanho. Mantendo a ultima escala valida.")
+        end
     end
 end
 
